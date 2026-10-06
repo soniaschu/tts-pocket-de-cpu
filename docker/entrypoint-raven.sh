@@ -5,7 +5,7 @@ models_dir="${MODEL_OUT_DIR:-/models}"
 voices_dir="${VOICE_OUT_DIR:-/voices}"
 mkdir -p "$models_dir" "$voices_dir"
 
-if [ "${POCKET_TTS_RAILWAY:-0}" = "1" ]; then
+if [ "${POCKET_TTS_RAILWAY:-0}" = "1" ] && [ ! -f "$models_dir/de/decoder.int8.onnx" ]; then
     python3 /app/sync_hf_bucket.py
 fi
 

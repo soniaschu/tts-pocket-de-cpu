@@ -96,3 +96,47 @@ Use `docker compose down` to stop services while retaining data. `docker compose
 down -v` also removes the downloaded bucket, model caches, output audio, and
 user voice samples.
 
+## Railway deployment
+
+Railway runs these as three independent services. Do not deploy the
+`model-voice-assets` Compose sidecar: Railway volumes are private to each
+service, so Spokenword and Raven bootstrap their own persistent model volume on
+first start. The first deployment downloads the bucket separately for both
+services and may take several minutes.
+
+Create three services from this repository and use the repository root as each
+service's build context. In each service's Settings, select the matching
+Railway configuration file:
+
+| Service | Config-as-code file | Volume mount | Health check |
+| --- | --- | --- | --- |
+| `landing` | `railway/landing.json` | `/german` | `/health` |
+| `spokenword` | `railway/spokenword.json` | `/models` | `/health` |
+| `raven` | `railway/raven.json` | `/models` | `/health` |
+
+Set these service variables in Railway:
+
+- `landing`: `POCKET_TTS_RAILWAY=1`, `STATE_DIR=/german`, `ADMIN_USERNAME`, and a strong secret `ADMIN_PASSWORD`. The service exits at startup if the password is missing or still `change-me`.
+- `spokenword`: `POCKET_TTS_RAILWAY=1`, `HF_BUCKET_ID=eysho-it/pocket-tts-models`; add `HF_TOKEN` only if the bucket is private. Optionally set `OMP_NUM_THREADS`.
+- `raven`: `POCKET_TTS_RAILWAY=1`, `HF_BUCKET_ID=eysho-it/pocket-tts-models`; add `HF_TOKEN` only if the bucket is private. Optionally set `RAVEN_THREADS`.
+
+Railway injects `PORT`; do not set a fixed port. The services bind to that
+port. Add a public domain only to services that need external access. Keep the
+Landing admin service protected by its Basic Auth credentials. The dashboard's
+Compose start/stop buttons are disabled in Railway; use Railway deployments to
+restart services. The `/german` Landing volume preserves its dashboard state
+and generated API keys. Each `/models` volume preserves the bucket cache and
+prepared files for its own TTS service; the two model volumes are not shared.
+
+For a local preflight, from this repository root run:
+
+```sh
+docker build -f docker/Dockerfile.landing -t pocket-tts-landing .
+docker build -f docker/Dockerfile.spokenword -t pocket-tts-spokenword .
+docker build -f docker/Dockerfile.raven -t pocket-tts-raven .
+```
+
+Railway deployments should use the matching config-as-code file above so each
+service builds from the repository root with its own Dockerfile, health check,
+and restart policy.
+

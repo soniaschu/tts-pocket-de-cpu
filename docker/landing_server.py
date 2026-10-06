@@ -58,18 +58,18 @@ def write_api_keys(keys: list[dict]) -> None:
 
 
 def require_dashboard_auth(handler: BaseHTTPRequestHandler) -> bool:
-      if not ADMIN_PASSWORD or ADMIN_PASSWORD == "change-me":
-          return not RAILWAY_DEPLOYMENT
+    if not ADMIN_PASSWORD or ADMIN_PASSWORD == "change-me":
+      return not RAILWAY_DEPLOYMENT
 
     auth_header = handler.headers.get("Authorization", "")
     if not auth_header.startswith("Basic "):
-        return False
+      return False
 
     encoded = auth_header.split(" ", 1)[1]
     try:
-        decoded = base64.b64decode(encoded).decode("utf-8")
+      decoded = base64.b64decode(encoded).decode("utf-8")
     except Exception:
-        return False
+      return False
 
     username, _, password = decoded.partition(":")
     return username == ADMIN_USERNAME and password == ADMIN_PASSWORD

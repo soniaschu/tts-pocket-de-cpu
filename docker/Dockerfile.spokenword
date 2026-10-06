@@ -28,4 +28,4 @@ ENV PATH="/app/.venv/bin:$PATH" \
     XDG_DATA_HOME=/data
 
 EXPOSE 8000
-ENTRYPOINT ["/app/entrypoint-spokenword.sh"]
+ENTRYPOINT ["sh", "/app/entrypoint-spokenword.sh"]
