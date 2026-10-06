@@ -16,14 +16,19 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl libgomp1 libstdc++6 \
+    ca-certificates curl libgomp1 libstdc++6 python3 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /src/pocket-tts /usr/local/bin/pocket-tts
 COPY --from=build /opt/onnxruntime/ /usr/local/lib/
 COPY docker/entrypoint-raven.sh /usr/local/bin/entrypoint-raven
+COPY docker/sync_hf_bucket.py /app/sync_hf_bucket.py
 RUN chmod +x /usr/local/bin/entrypoint-raven && ldconfig
 
 WORKDIR /app
+ENV BUCKET_DIR=/models/.hf-bucket \
+    MODEL_OUT_DIR=/models \
+    VOICE_OUT_DIR=/voices \
+    STATE_DIR=/models/state
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/entrypoint-raven"]

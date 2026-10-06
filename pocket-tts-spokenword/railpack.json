@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "packages": {
+    "python": "3.12"
+  },
+  "buildAptPackages": [
+    "...",
+    "ffmpeg",
+    "libgl1",
+    "libglib2.0-0",
+    "libgomp1",
+    "libsndfile1"
+  ],
+  "deploy": {
+    "startCommand": "python serve_spokenword.py",
+    "variables": {
+      "HF_HOME": "/data/huggingface",
+      "OMP_NUM_THREADS": "4",
+      "PORT": "8000",
+      "PYTHONUNBUFFERED": "1",
+      "XDG_DATA_HOME": "/data"
+    }
+  }
+}

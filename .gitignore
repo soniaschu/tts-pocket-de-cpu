@@ -1,0 +1,6 @@
+german/models/
+german/voices/
+.DS_Store
+__pycache__/
+*.pyc
+webui-sdk

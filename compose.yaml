@@ -7,11 +7,30 @@ services:
       HF_BUCKET_ID: ${HF_BUCKET_ID:-eysho-it/pocket-tts-models}
       HF_TOKEN: ${HF_TOKEN:-}
       DOWNLOAD_WORKERS: ${DOWNLOAD_WORKERS:-4}
+      MODEL_OUT_DIR: /models
+      VOICE_OUT_DIR: /voices
+      STATE_DIR: /german
     dns:
       - ${DOCKER_DNS_SERVER:-1.1.1.1}
     volumes:
+      - ./german:/german
+      - ./german/models:/models
+      - ./german/voices:/voices
       - hf_bucket:/bucket
     restart: "no"
+
+  landing:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.landing
+    environment:
+      STATE_DIR: /german
+      PORT: 8088
+    volumes:
+      - ./german:/german:ro
+    ports:
+      - "8088:8088"
+    restart: unless-stopped
 
   spokenword:
     build:
@@ -27,7 +46,8 @@ services:
     dns:
       - ${DOCKER_DNS_SERVER:-1.1.1.1}
     volumes:
-      - hf_bucket:/bucket:ro
+      - ./german/models:/models:ro
+      - ./german/voices:/voices:ro
       - spokenword_data:/data
     ports:
       - "8000:8000"
@@ -53,7 +73,8 @@ services:
     dns:
       - ${DOCKER_DNS_SERVER:-1.1.1.1}
     volumes:
-      - hf_bucket:/bucket:ro
+      - ./german/models:/models:ro
+      - ./german/voices:/voices:ro
       - raven_data:/data
     ports:
       - "8080:8080"
