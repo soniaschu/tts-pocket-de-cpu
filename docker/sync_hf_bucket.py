@@ -2,6 +2,7 @@ import concurrent.futures
 import hashlib
 import json
 import os
+import shutil
 import struct
 import sys
 import time
@@ -13,6 +14,8 @@ from urllib.request import Request, urlopen
 
 BUCKET_ID = os.environ.get("HF_BUCKET_ID", "eysho-it/pocket-tts-models")
 BUCKET_ROOT = Path("/bucket")
+MODEL_OUT_DIR = Path(os.environ.get("MODEL_OUT_DIR", "/models"))
+VOICE_OUT_DIR = Path(os.environ.get("VOICE_OUT_DIR", "/voices"))
 TOKEN = os.environ.get("HF_TOKEN")
 WORKERS = max(1, min(int(os.environ.get("DOWNLOAD_WORKERS", "4")), 8))
 API_ROOT = "https://huggingface.co/api/buckets/"
@@ -124,6 +127,44 @@ def write_raven_bos_embedding():
     print(f"prepared {output_path.relative_to(BUCKET_ROOT)} from the German checkpoint", flush=True)
 
 
+def sync_runtime_layout():
+    MODEL_OUT_DIR.mkdir(parents=True, exist_ok=True)
+    VOICE_OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    for relative in ("de", "german"):
+        source_dir = BUCKET_ROOT / relative
+        target_dir = MODEL_OUT_DIR / relative
+        if source_dir.exists():
+            target_dir.mkdir(parents=True, exist_ok=True)
+            for child in source_dir.iterdir():
+                destination = target_dir / child.name
+                if child.is_dir():
+                    if destination.exists():
+                        shutil.rmtree(destination)
+                    shutil.copytree(child, destination, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(child, destination)
+
+    flattened_aliases = {
+        "flow_lm_main_int8.onnx": "de/lm_main.int8.onnx",
+        "flow_lm_flow_int8.onnx": "de/lm_flow.int8.onnx",
+        "mimi_decoder_int8.onnx": "de/decoder.int8.onnx",
+        "mimi_encoder.onnx": "de/encoder.onnx",
+        "text_conditioner.onnx": "de/text_conditioner.onnx",
+        "bos_before_voice.npy": "de/bos_before_voice.npy",
+    }
+    for alias_name, relative_source in flattened_aliases.items():
+        source_path = BUCKET_ROOT / relative_source
+        if source_path.exists():
+            shutil.copy2(source_path, MODEL_OUT_DIR / alias_name)
+
+    if (BUCKET_ROOT / "de" / "default.wav").exists():
+        shutil.copy2(BUCKET_ROOT / "de" / "default.wav", VOICE_OUT_DIR / "default.wav")
+        shutil.copy2(BUCKET_ROOT / "de" / "default.wav", VOICE_OUT_DIR / "de-default.wav")
+
+    print(f"runtime layout synced to {MODEL_OUT_DIR} and {VOICE_OUT_DIR}", flush=True)
+
+
 def main():
     BUCKET_ROOT.mkdir(parents=True, exist_ok=True)
     manifest_path = BUCKET_ROOT / ".hf-bucket-manifest.json"
@@ -140,6 +181,7 @@ def main():
             print(future.result(), flush=True)
 
     write_raven_bos_embedding()
+    sync_runtime_layout()
     manifest = {
         "bucket": BUCKET_ID,
         "files": {item["path"]: item.get("xetHash") for item in files},

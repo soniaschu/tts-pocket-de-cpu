@@ -7,7 +7,7 @@ from pocket_tts.models.tts_model import TTSModel
 
 
 variant = "bucket_german"
-default_voice = "/bucket/de/default.wav"
+default_voice = "/models/de/default.wav"
 app.tts_model = TTSModel.load_model(variant)
 app.global_model_state = app.tts_model.get_state_for_audio_prompt(default_voice, truncate=True)
 

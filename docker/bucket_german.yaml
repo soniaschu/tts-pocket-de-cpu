@@ -1,5 +1,5 @@
-weights_path: /bucket/german/model.safetensors
-weights_path_without_voice_cloning: /bucket/german/model.safetensors
+weights_path: /models/german/model.safetensors
+weights_path_without_voice_cloning: /models/german/model.safetensors
 
 flow_lm:
   dtype: float32
@@ -16,7 +16,7 @@ flow_lm:
     dim: 1024
     n_bins: 4000
     tokenizer: sentencepiece
-    tokenizer_path: /bucket/german/tokenizer.model
+    tokenizer_path: /models/german/tokenizer.model
 
 mimi:
   dtype: float32

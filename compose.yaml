@@ -7,9 +7,13 @@ services:
       HF_BUCKET_ID: ${HF_BUCKET_ID:-eysho-it/pocket-tts-models}
       HF_TOKEN: ${HF_TOKEN:-}
       DOWNLOAD_WORKERS: ${DOWNLOAD_WORKERS:-4}
+      MODEL_OUT_DIR: /models
+      VOICE_OUT_DIR: /voices
     dns:
       - ${DOCKER_DNS_SERVER:-1.1.1.1}
     volumes:
+      - ./models:/models
+      - ./voices:/voices
       - hf_bucket:/bucket
     restart: "no"
 
@@ -27,7 +31,8 @@ services:
     dns:
       - ${DOCKER_DNS_SERVER:-1.1.1.1}
     volumes:
-      - hf_bucket:/bucket:ro
+      - ./models:/models:ro
+      - ./voices:/voices:ro
       - spokenword_data:/data
     ports:
       - "8000:8000"
@@ -53,7 +58,8 @@ services:
     dns:
       - ${DOCKER_DNS_SERVER:-1.1.1.1}
     volumes:
-      - hf_bucket:/bucket:ro
+      - ./models:/models:ro
+      - ./voices:/voices:ro
       - raven_data:/data
     ports:
       - "8080:8080"
