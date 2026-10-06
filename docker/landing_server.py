@@ -16,8 +16,11 @@ API_KEYS_FILE = STATE_DIR / "api_keys.json"
 
 
 def run_compose(action: str) -> dict:
-  if RAILWAY_DEPLOYMENT:
-    return {"ok": False, "error": "Manage Railway services from the Railway dashboard."}
+    if RAILWAY_DEPLOYMENT:
+        return {
+            "ok": False,
+            "error": "Manage Railway services from the Railway dashboard.",
+        }
 
     try:
         subprocess.run(
@@ -59,17 +62,17 @@ def write_api_keys(keys: list[dict]) -> None:
 
 def require_dashboard_auth(handler: BaseHTTPRequestHandler) -> bool:
     if not ADMIN_PASSWORD or ADMIN_PASSWORD == "change-me":
-      return not RAILWAY_DEPLOYMENT
+        return not RAILWAY_DEPLOYMENT
 
     auth_header = handler.headers.get("Authorization", "")
     if not auth_header.startswith("Basic "):
-      return False
+        return False
 
     encoded = auth_header.split(" ", 1)[1]
     try:
-      decoded = base64.b64decode(encoded).decode("utf-8")
+        decoded = base64.b64decode(encoded).decode("utf-8")
     except Exception:
-      return False
+        return False
 
     username, _, password = decoded.partition(":")
     return username == ADMIN_USERNAME and password == ADMIN_PASSWORD
@@ -83,7 +86,11 @@ def require_service_key(service_name: str, handler: BaseHTTPRequestHandler) -> b
         return False
 
     token = auth_header.split(" ", 1)[1].strip()
-    keys = {item.get("key") for item in read_api_keys() if item.get("service") == service_name}
+    keys = {
+        item.get("key")
+        for item in read_api_keys()
+        if item.get("service") == service_name
+    }
     return token in keys
 
 
@@ -92,7 +99,9 @@ def create_api_key(service: str) -> dict:
     key_data = {
         "service": service_name,
         "key": secrets.token_urlsafe(24),
-        "created_at": __import__("datetime").datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "created_at": __import__("datetime")
+        .datetime.utcnow()
+        .strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     keys = read_api_keys()
     keys.append(key_data)
@@ -136,7 +145,11 @@ def render_page(status: dict) -> str:
     voice_files = int(status.get("voice_files", 0))
     downloaded = int(status.get("downloaded_files", 0))
     status_name = status.get("status", "waiting")
-    status_label = "Ready" if status_name == "ready" else "Downloading" if status_name == "downloading" else "Waiting"
+    status_label = (
+        "Ready"
+        if status_name == "ready"
+        else "Downloading" if status_name == "downloading" else "Waiting"
+    )
     app_links = """
         <div class="actions buttons-row">
             <a href="http://localhost:8000" target="_blank" rel="noreferrer">Open Spokenword</a>
@@ -147,7 +160,7 @@ def render_page(status: dict) -> str:
         </div>
     """
     if RAILWAY_DEPLOYMENT:
-      app_links = """
+        app_links = """
         <div class="actions buttons-row muted">
           <span>Railway services are managed from the Railway dashboard.</span>
         </div>
@@ -162,14 +175,17 @@ def render_page(status: dict) -> str:
             </div>
         """
 
-    key_rows = "".join(
-        "<li><strong>{service}</strong>: <code>{key}</code> <span class='tiny'>{created_at}</span></li>".format(
-            service=item.get("service", "service"),
-            key=item.get("key", ""),
-            created_at=item.get("created_at", ""),
+    key_rows = (
+        "".join(
+            "<li><strong>{service}</strong>: <code>{key}</code> <span class='tiny'>{created_at}</span></li>".format(
+                service=item.get("service", "service"),
+                key=item.get("key", ""),
+                created_at=item.get("created_at", ""),
+            )
+            for item in read_api_keys()
         )
-        for item in read_api_keys()
-    ) or "<li class='tiny'>No API keys created yet.</li>"
+        or "<li class='tiny'>No API keys created yet.</li>"
+    )
 
     template = """
     <!doctype html>
@@ -575,22 +591,26 @@ def render_page(status: dict) -> str:
     for key, value in replacements.items():
         rendered = rendered.replace(key, str(value))
     return rendered
+
+
 class StatusHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok", "admin": ADMIN_USERNAME}).encode())
+            self.wfile.write(
+                json.dumps({"status": "ok", "admin": ADMIN_USERNAME}).encode()
+            )
             return
 
         if self.path == "/api/keys" and not require_dashboard_auth(self):
-          self.send_response(401)
-          self.send_header("WWW-Authenticate", 'Basic realm="Pocket TTS dashboard"')
-          self.send_header("Content-Type", "application/json")
-          self.end_headers()
-          self.wfile.write(json.dumps({"error": "unauthorized"}).encode())
-          return
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Basic realm="Pocket TTS dashboard"')
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "unauthorized"}).encode())
+            return
 
         if self.path == "/api/keys":
             self.send_response(200)
@@ -657,8 +677,8 @@ class StatusHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-  if RAILWAY_DEPLOYMENT and (not ADMIN_PASSWORD or ADMIN_PASSWORD == "change-me"):
-    raise SystemExit("Set a non-default ADMIN_PASSWORD for Railway deployments.")
+    if RAILWAY_DEPLOYMENT and (not ADMIN_PASSWORD or ADMIN_PASSWORD == "change-me"):
+        raise SystemExit("Set a non-default ADMIN_PASSWORD for Railway deployments.")
 
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer(("0.0.0.0", PORT), StatusHandler)
