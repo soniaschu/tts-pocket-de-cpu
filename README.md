@@ -1,6 +1,3 @@
-# -pocket-tts-models# tts-pocket-de-cpu.bkg
-# tts-pocket-de-cpu.bkg
-
 ## Docker Compose
 
 Run both TTS services together from the workspace root:
@@ -37,5 +34,4 @@ uploaded WAV prompts for voice cloning.
 Use `docker compose down` to stop services while retaining data. `docker compose
 down -v` also removes the downloaded bucket, model caches, output audio, and
 user voice samples.
-# tts-pocket-de-cpu.bkg
-# tts-pocket-de-cpu
+

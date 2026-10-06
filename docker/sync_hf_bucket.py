@@ -16,6 +16,7 @@ BUCKET_ID = os.environ.get("HF_BUCKET_ID", "eysho-it/pocket-tts-models")
 BUCKET_ROOT = Path("/bucket")
 MODEL_OUT_DIR = Path(os.environ.get("MODEL_OUT_DIR", "/models"))
 VOICE_OUT_DIR = Path(os.environ.get("VOICE_OUT_DIR", "/voices"))
+STATE_DIR = Path(os.environ.get("STATE_DIR", "/german"))
 TOKEN = os.environ.get("HF_TOKEN")
 WORKERS = max(1, min(int(os.environ.get("DOWNLOAD_WORKERS", "4")), 8))
 API_ROOT = "https://huggingface.co/api/buckets/"
@@ -127,6 +128,29 @@ def write_raven_bos_embedding():
     print(f"prepared {output_path.relative_to(BUCKET_ROOT)} from the German checkpoint", flush=True)
 
 
+def count_files(path):
+    if not path.exists():
+        return 0
+    return sum(1 for _ in path.rglob("*") if _.is_file())
+
+
+def write_status(status, files_downloaded=None, model_files=None, voice_files=None):
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "status": status,
+        "bucket": BUCKET_ID,
+        "downloaded_files": files_downloaded if files_downloaded is not None else count_files(BUCKET_ROOT),
+        "model_files": model_files if model_files is not None else count_files(MODEL_OUT_DIR),
+        "voice_files": voice_files if voice_files is not None else count_files(VOICE_OUT_DIR),
+        "models_dir": str(MODEL_OUT_DIR),
+        "voices_dir": str(VOICE_OUT_DIR),
+        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    status_path = STATE_DIR / "status.json"
+    status_path.write_text(json.dumps(payload, indent=2) + "\n")
+    print(f"status: {status} -> {status_path}", flush=True)
+
+
 def sync_runtime_layout():
     MODEL_OUT_DIR.mkdir(parents=True, exist_ok=True)
     VOICE_OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -167,6 +191,9 @@ def sync_runtime_layout():
 
 def main():
     BUCKET_ROOT.mkdir(parents=True, exist_ok=True)
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    write_status("downloading", files_downloaded=0, model_files=0, voice_files=0)
+
     manifest_path = BUCKET_ROOT / ".hf-bucket-manifest.json"
     try:
         old_manifest = json.loads(manifest_path.read_text())
@@ -189,6 +216,12 @@ def main():
     temporary_manifest = manifest_path.with_suffix(".tmp")
     temporary_manifest.write_text(json.dumps(manifest, indent=2) + "\n")
     temporary_manifest.replace(manifest_path)
+    write_status(
+        "ready",
+        files_downloaded=len(files),
+        model_files=count_files(MODEL_OUT_DIR),
+        voice_files=count_files(VOICE_OUT_DIR),
+    )
     print(f"Ready: {len(files)} bucket files in {BUCKET_ROOT}", flush=True)
 
 
