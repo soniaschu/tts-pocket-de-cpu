@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 
 
 BUCKET_ID = os.environ.get("HF_BUCKET_ID", "eysho-it/pocket-tts-models")
-BUCKET_ROOT = Path("/bucket")
+BUCKET_ROOT = Path(os.environ.get("BUCKET_DIR", "/bucket"))
 MODEL_OUT_DIR = Path(os.environ.get("MODEL_OUT_DIR", "/models"))
 VOICE_OUT_DIR = Path(os.environ.get("VOICE_OUT_DIR", "/voices"))
 STATE_DIR = Path(os.environ.get("STATE_DIR", "/german"))

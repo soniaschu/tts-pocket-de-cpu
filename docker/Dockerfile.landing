@@ -5,8 +5,7 @@ COPY docker/landing_server.py ./landing_server.py
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    STATE_DIR=/german \
-    PORT=8088
+    STATE_DIR=/german
 
 EXPOSE 8088
 CMD ["python", "/app/landing_server.py"]

@@ -12,14 +12,20 @@ COPY pocket-tts-spokenword/pyproject.toml pocket-tts-spokenword/uv.lock ./
 COPY pocket-tts-spokenword/pocket_tts ./pocket_tts
 COPY docker/bucket_german.yaml ./pocket_tts/config/bucket_german.yaml
 COPY docker/serve_spokenword.py ./serve_spokenword.py
+COPY docker/sync_hf_bucket.py ./sync_hf_bucket.py
+COPY docker/entrypoint-spokenword.sh ./entrypoint-spokenword.sh
 
 RUN uv sync --frozen --no-dev --python /usr/local/bin/python3.12
 
 ENV PATH="/app/.venv/bin:$PATH" \
     HF_HOME=/data/huggingface \
+    BUCKET_DIR=/models/.hf-bucket \
+    MODEL_OUT_DIR=/models \
+    VOICE_OUT_DIR=/voices \
+    STATE_DIR=/models/state \
     OMP_NUM_THREADS=4 \
     PYTHONUNBUFFERED=1 \
     XDG_DATA_HOME=/data
 
 EXPOSE 8000
-CMD ["python", "/app/serve_spokenword.py"]
+ENTRYPOINT ["/app/entrypoint-spokenword.sh"]

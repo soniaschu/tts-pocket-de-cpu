@@ -11,10 +11,14 @@ PORT = int(os.environ.get("PORT", "8088"))
 COMPOSE_FILE = os.environ.get("COMPOSE_FILE", "compose.yaml")
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "change-me")
+RAILWAY_DEPLOYMENT = os.environ.get("POCKET_TTS_RAILWAY", "0") == "1"
 API_KEYS_FILE = STATE_DIR / "api_keys.json"
 
 
 def run_compose(action: str) -> dict:
+  if RAILWAY_DEPLOYMENT:
+    return {"ok": False, "error": "Manage Railway services from the Railway dashboard."}
+
     try:
         subprocess.run(
             ["docker", "compose", "-f", COMPOSE_FILE, action],
@@ -55,7 +59,7 @@ def write_api_keys(keys: list[dict]) -> None:
 
 def require_dashboard_auth(handler: BaseHTTPRequestHandler) -> bool:
     if not ADMIN_PASSWORD or ADMIN_PASSWORD == "change-me":
-        return True
+    return not RAILWAY_DEPLOYMENT
 
     auth_header = handler.headers.get("Authorization", "")
     if not auth_header.startswith("Basic "):
@@ -142,7 +146,13 @@ def render_page(status: dict) -> str:
             <button class="admin-btn danger" data-action="stop">Stop stack</button>
         </div>
     """
-    if status_name != "ready":
+    if RAILWAY_DEPLOYMENT:
+      app_links = """
+        <div class="actions buttons-row muted">
+          <span>Railway services are managed from the Railway dashboard.</span>
+        </div>
+      """
+    elif status_name != "ready":
         app_links = """
             <div class="actions buttons-row muted">
                 <span>Waiting for the model sidecar to finish syncing.</span>
@@ -574,6 +584,14 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"status": "ok", "admin": ADMIN_USERNAME}).encode())
             return
 
+        if self.path == "/api/keys" and not require_dashboard_auth(self):
+          self.send_response(401)
+          self.send_header("WWW-Authenticate", 'Basic realm="Pocket TTS dashboard"')
+          self.send_header("Content-Type", "application/json")
+          self.end_headers()
+          self.wfile.write(json.dumps({"error": "unauthorized"}).encode())
+          return
+
         if self.path == "/api/keys":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -639,6 +657,9 @@ class StatusHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+  if RAILWAY_DEPLOYMENT and (not ADMIN_PASSWORD or ADMIN_PASSWORD == "change-me"):
+    raise SystemExit("Set a non-default ADMIN_PASSWORD for Railway deployments.")
+
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer(("0.0.0.0", PORT), StatusHandler)
     print(f"Landing page serving on http://0.0.0.0:{PORT}", flush=True)

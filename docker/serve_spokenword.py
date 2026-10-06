@@ -14,5 +14,5 @@ app.global_model_state = app.tts_model.get_state_for_audio_prompt(default_voice,
 uvicorn.run(
     app.web_app,
     host="0.0.0.0",
-    port=int(os.environ.get("SPOKENWORD_INTERNAL_PORT", "8000")),
+    port=int(os.environ.get("PORT", os.environ.get("SPOKENWORD_INTERNAL_PORT", "8000"))),
 )
