@@ -31,11 +31,16 @@ The generated keys are stored under the `german/` directory in `api_keys.json` a
 
 ## Railpack
 
-Install the Railpack CLI from the official site before using the deployment flow:
+Install the official Railway Railpack CLI from the upstream GitHub repository before using the deployment flow:
 
-https://railpack.com/
+https://github.com/railwayapp/railpack
 
-This keeps the deployment and runtime tooling aligned with the supported Railpack installation flow.
+The bundled helper script installs the official release binary directly from the upstream repo and falls back to the upstream installer only if the release metadata is unavailable.
+
+```bash
+./scripts/railpack.sh install
+railpack --help
+```
 
 ## Landing page and admin controls
 
