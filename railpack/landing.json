@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "packages": {
+    "python": "3.12"
+  },
+  "buildAptPackages": [
+    "...",
+    "curl",
+    "ffmpeg",
+    "libgl1",
+    "libglib2.0-0",
+    "libgomp1",
+    "libsndfile1"
+  ],
+  "deploy": {
+    "startCommand": "python landing_server.py",
+    "variables": {
+      "PYTHONUNBUFFERED": "1",
+      "STATE_DIR": "/german",
+      "PORT": "8088"
+    }
+  }
+}

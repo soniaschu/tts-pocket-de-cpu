@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import secrets
@@ -8,6 +9,9 @@ from pathlib import Path
 STATE_DIR = Path(os.environ.get("STATE_DIR", "/german"))
 PORT = int(os.environ.get("PORT", "8088"))
 COMPOSE_FILE = os.environ.get("COMPOSE_FILE", "compose.yaml")
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "change-me")
+API_KEYS_FILE = STATE_DIR / "api_keys.json"
 
 
 def run_compose(action: str) -> dict:
@@ -31,11 +35,10 @@ def run_compose(action: str) -> dict:
 
 
 def read_api_keys() -> list[dict]:
-    key_file = STATE_DIR / "api_keys.json"
-    if not key_file.exists():
+    if not API_KEYS_FILE.exists():
         return []
     try:
-        data = json.loads(key_file.read_text())
+        data = json.loads(API_KEYS_FILE.read_text())
         if isinstance(data, list):
             return data
         if isinstance(data, dict):
@@ -47,7 +50,37 @@ def read_api_keys() -> list[dict]:
 
 def write_api_keys(keys: list[dict]) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    (STATE_DIR / "api_keys.json").write_text(json.dumps(keys, indent=2) + "\n")
+    API_KEYS_FILE.write_text(json.dumps(keys, indent=2) + "\n")
+
+
+def require_dashboard_auth(handler: BaseHTTPRequestHandler) -> bool:
+    if not ADMIN_PASSWORD or ADMIN_PASSWORD == "change-me":
+        return True
+
+    auth_header = handler.headers.get("Authorization", "")
+    if not auth_header.startswith("Basic "):
+        return False
+
+    encoded = auth_header.split(" ", 1)[1]
+    try:
+        decoded = base64.b64decode(encoded).decode("utf-8")
+    except Exception:
+        return False
+
+    username, _, password = decoded.partition(":")
+    return username == ADMIN_USERNAME and password == ADMIN_PASSWORD
+
+
+def require_service_key(service_name: str, handler: BaseHTTPRequestHandler) -> bool:
+    if not service_name:
+        return True
+    auth_header = handler.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return False
+
+    token = auth_header.split(" ", 1)[1].strip()
+    keys = {item.get("key") for item in read_api_keys() if item.get("service") == service_name}
+    return token in keys
 
 
 def create_api_key(service: str) -> dict:
@@ -120,241 +153,447 @@ def render_page(status: dict) -> str:
         """
 
     key_rows = "".join(
-        f"<li><strong>{item.get('service', 'service')}</strong>: <code>{item.get('key', '')}</code> <span class='tiny'>{item.get('created_at', '')}</span></li>"
+        "<li><strong>{service}</strong>: <code>{key}</code> <span class='tiny'>{created_at}</span></li>".format(
+            service=item.get("service", "service"),
+            key=item.get("key", ""),
+            created_at=item.get("created_at", ""),
+        )
         for item in read_api_keys()
     ) or "<li class='tiny'>No API keys created yet.</li>"
 
-    return f"""
+    template = """
     <!doctype html>
     <html lang="en">
     <head>
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
-      <title>Pocket TTS Status</title>
+      <title>Pocket TTS Control Center</title>
       <style>
-        :root {{
-          --bg: #0b1020;
-          --panel: #121b2d;
-          --panel-alt: #18263f;
-          --accent: #6ee7b7;
-          --accent-2: #60a5fa;
+        :root {
+          --bg: #07111f;
+          --bg-soft: #0d1b2d;
+          --panel: rgba(15, 23, 42, 0.82);
+          --panel-strong: rgba(17, 24, 39, 0.96);
+          --line: rgba(148, 163, 184, 0.22);
+          --accent: #7dd3fc;
+          --accent-strong: #38bdf8;
+          --success: #34d399;
           --warning: #fbbf24;
-          --text: #e5eefb;
-          --muted: #a7b7d6;
-          --danger: #fca5a5;
+          --text: #e2e8f0;
+          --muted: #94a3b8;
+          --danger: #f87171;
           --shadow: rgba(15, 23, 42, 0.45);
-        }}
-        * {{ box-sizing: border-box; }}
-        body {{
-          margin: 0;
-          font-family: Arial, sans-serif;
-          background: radial-gradient(circle at top, #16213d 0%, var(--bg) 35%, #090d17 100%);
+        }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; }
+        body {
+          background: radial-gradient(circle at top, #11263d 0%, var(--bg) 32%, #040b15 100%);
           color: var(--text);
+          font-family: Inter, "Segoe UI", sans-serif;
           min-height: 100vh;
+          display: flex;
+          justify-content: center;
+          padding: 32px 24px;
+        }
+        .shell {
+          width: min(1180px, 100%);
+          display: flex;
+          flex-direction: column;
+          gap: 24px;
+        }
+        .hero {
+          background: linear-gradient(135deg, rgba(18, 34, 58, 0.95), rgba(10, 17, 28, 0.95));
+          border: 1px solid var(--line);
+          border-radius: 24px;
+          box-shadow: 0 20px 50px var(--shadow);
+          padding: 28px 24px;
+        }
+        .topbar {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 16px;
+          flex-wrap: wrap;
+        }
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+        }
+        .brand-mark {
+          width: 42px;
+          height: 42px;
+          border-radius: 14px;
+          background: linear-gradient(135deg, var(--accent), #7c3aed);
+          box-shadow: 0 12px 20px rgba(125, 211, 252, 0.35);
           display: grid;
           place-items: center;
-        }}
-        .shell {{
-          width: min(960px, calc(100vw - 32px));
-          padding: 32px 20px 42px;
-        }}
-        h1 {{ margin: 0 0 12px; font-size: clamp(2rem, 4vw, 3rem); }}
-        .subtitle {{ color: var(--muted); margin-bottom: 24px; }}
-        .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; }}
-        .card {{
-          background: rgba(18, 27, 45, 0.92);
-          border: 1px solid rgba(148, 163, 184, 0.2);
+          font-weight: 800;
+          color: #04111f;
+        }
+        h1 {
+          margin: 0;
+          font-size: clamp(2rem, 3vw, 3rem);
+          letter-spacing: -0.05em;
+        }
+        .subtitle {
+          color: var(--muted);
+          font-size: 1rem;
+          margin-top: 8px;
+        }
+        .status-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          background: rgba(52, 211, 153, 0.12);
+          border: 1px solid rgba(52, 211, 153, 0.35);
+          color: #b9f7d8;
+          border-radius: 999px;
+          padding: 8px 14px;
+          font-weight: 700;
+        }
+        .status-pill.waiting {
+          background: rgba(251, 191, 36, 0.12);
+          border-color: rgba(251, 191, 36, 0.35);
+          color: #fde68a;
+        }
+        .status-dot {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          background: currentColor;
+          display: block;
+        }
+        .metrics {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 18px;
+          margin-top: 26px;
+        }
+        .card {
+          background: rgba(15, 23, 42, 0.7);
+          border: 1px solid var(--line);
           border-radius: 18px;
           padding: 18px 20px;
-          box-shadow: 0 18px 40px var(--shadow);
-        }}
-        .label {{
-          display: block;
-          font-size: 0.75rem;
-          letter-spacing: 0.12em;
+        }
+        .label {
+          font-size: 0.72rem;
           text-transform: uppercase;
+          letter-spacing: 0.12em;
           color: var(--muted);
-        }}
-        .value {{
-          display: block;
-          margin-top: 12px;
-          font-size: clamp(1.7rem, 3vw, 2.5rem);
-          font-weight: 700;
-        }}
-        .status-badge {{
-          display: inline-block;
-          padding: 6px 12px;
-          border-radius: 999px;
-          background: rgba(110, 231, 183, 0.15);
-          border: 1px solid rgba(110, 231, 183, 0.5);
-          color: var(--accent);
-          font-weight: 600;
-          margin-top: 4px;
-        }}
-        .muted {{ color: var(--muted); }}
-        .actions {{ display: flex; gap: 12px; flex-wrap: wrap; margin-top: 26px; }}
-        .buttons-row {{ align-items: center; }}
-        .actions a, .admin-btn {{
-          display: inline-block;
-          padding: 12px 16px;
-          background: linear-gradient(135deg, var(--accent-2), var(--accent));
-          color: #081321;
-          text-decoration: none;
-          border-radius: 10px;
-          font-weight: 700;
+        }
+        .value {
+          margin-top: 14px;
+          font-size: clamp(1.8rem, 2.3vw, 2.6rem);
+          font-weight: 800;
+          letter-spacing: -0.05em;
+        }
+        .muted { color: var(--muted); }
+        .section {
+          background: rgba(15, 23, 42, 0.75);
+          border: 1px solid var(--line);
+          border-radius: 22px;
+          box-shadow: 0 18px 40px var(--shadow);
+          padding: 22px 20px;
+        }
+        .section-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 18px;
+          flex-wrap: wrap;
+          margin-bottom: 18px;
+        }
+        .section-title {
+          margin: 0;
+          font-size: 1.2rem;
+        }
+        .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+        .admin-btn, .action-link {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
           border: none;
+          border-radius: 12px;
+          padding: 11px 16px;
+          text-decoration: none;
+          font-weight: 700;
           cursor: pointer;
-          font-size: 0.95rem;
-        }}
-        .admin-btn.danger {{
-          background: linear-gradient(135deg, #fca5a5, #f87171);
-        }}
-        .actions.muted span {{
-          color: var(--muted);
-          padding: 12px 14px;
-          border-radius: 10px;
-          background: rgba(148, 163, 184, 0.08);
-          border: 1px solid rgba(148, 163, 184, 0.14);
-        }}
-        .panel {{
-          margin-top: 22px;
-          background: rgba(18, 27, 45, 0.92);
-          border: 1px solid rgba(148, 163, 184, 0.2);
-          border-radius: 18px;
-          padding: 20px;
-        }}
-        form {{ display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }}
-        select, button, code {{ font: inherit; }}
-        select {{
-          background: #111827;
+          transition: transform 0.15s ease;
+        }
+        .admin-btn:hover, .action-link:hover { transform: translateY(-1px); }
+        .action-link {
+          background: linear-gradient(135deg, rgba(56, 189, 248, 0.22), rgba(125, 211, 252, 0.14));
+          border: 1px solid rgba(125, 211, 252, 0.38);
           color: var(--text);
-          border: 1px solid rgba(148, 163, 184, 0.3);
+        }
+        .admin-btn.primary {
+          background: linear-gradient(135deg, var(--accent-strong), var(--accent));
+          color: #04111f;
+        }
+        .admin-btn.warning {
+          background: linear-gradient(135deg, #f59e0b, #fbbf24);
+          color: #1f1300;
+        }
+        .admin-btn.danger {
+          background: linear-gradient(135deg, #fda4af, #fb7185);
+          color: #1b0910;
+        }
+        .panel-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+          gap: 18px;
+        }
+        .mini-card {
+          background: rgba(2, 6, 23, 0.26);
+          border: 1px solid rgba(148, 163, 184, 0.18);
+          border-radius: 18px;
+          padding: 18px;
+        }
+        .mini-card h3 {
+          margin: 0 0 8px;
+          font-size: 1rem;
+        }
+        .mini-card p {
+          margin: 0;
+          color: var(--muted);
+          line-height: 1.5;
+        }
+        form {
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+          margin-top: 12px;
+        }
+        select, button, code {
+          font: inherit;
+        }
+        select {
+          background: rgba(15, 23, 42, 0.8);
+          color: var(--text);
+          border: 1px solid rgba(148, 163, 184, 0.28);
           border-radius: 10px;
           padding: 10px 12px;
-        }}
-        .tiny {{ font-size: 0.8rem; color: var(--muted); }}
-        ul {{ list-style: none; padding-left: 0; margin: 16px 0 0; }}
-        li {{ padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.1); }}
-        code {{ background: rgba(148,163,184,0.08); padding: 4px 8px; border-radius: 6px; display: inline-block; max-width: 100%; overflow-wrap: anywhere; }}
+          min-width: 180px;
+        }
+        ul {
+          list-style: none;
+          padding: 0;
+          margin: 16px 0 0;
+        }
+        li {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+          padding: 10px 0;
+          border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+        }
+        .key-name {
+          font-weight: 700;
+          text-transform: capitalize;
+        }
+        code {
+          display: inline-block;
+          background: rgba(148,163,184,0.08);
+          border-radius: 8px;
+          padding: 4px 8px;
+          color: var(--text);
+          max-width: 100%;
+          overflow-wrap: anywhere;
+        }
+        .tiny { font-size: 0.8rem; color: var(--muted); }
+        @media (max-width: 720px) {
+          body { padding: 18px 14px; }
+          .section, .hero { padding: 18px 16px; }
+        }
       </style>
     </head>
     <body>
       <div class="shell">
-        <h1>Pocket TTS</h1>
-        <div class="subtitle">Model sidecar status, downloaded assets and voice sync</div>
+        <header class="hero">
+          <div class="topbar">
+            <div class="brand">
+              <div class="brand-mark">T</div>
+              <div>
+                <h1>Pocket TTS</h1>
+                <div class="subtitle">Sidecar sync, voice download, and remote model control</div>
+              </div>
+            </div>
+            <div class="status-pill __STATUS_CLASS__"><span class="status-dot"></span> __STATUS_LABEL__</div>
+          </div>
 
-        <div class="grid">
-          <div class="card">
-            <span class="label">System status</span>
-            <span class="value"><span class="status-badge">{status_label}</span></span>
+          <div class="metrics">
+            <div class="card">
+              <div class="label">System status</div>
+              <div class="value">__STATUS_LABEL__</div>
+            </div>
+            <div class="card">
+              <div class="label">Bucket</div>
+              <div class="value muted">__BUCKET__</div>
+            </div>
+            <div class="card">
+              <div class="label">Models</div>
+              <div class="value">__MODEL_FILES__</div>
+            </div>
+            <div class="card">
+              <div class="label">Voices</div>
+              <div class="value">__VOICE_FILES__</div>
+            </div>
+            <div class="card">
+              <div class="label">Downloaded files</div>
+              <div class="value">__DOWNLOADED__</div>
+            </div>
+            <div class="card">
+              <div class="label">Updated</div>
+              <div class="value muted">__UPDATED_AT__</div>
+            </div>
           </div>
-          <div class="card">
-            <span class="label">Bucket</span>
-            <span class="value">{status.get('bucket', 'eysho-it/pocket-tts-models')}</span>
-          </div>
-          <div class="card">
-            <span class="label">Models</span>
-            <span class="value">{model_files}</span>
-          </div>
-          <div class="card">
-            <span class="label">Voices</span>
-            <span class="value">{voice_files}</span>
-          </div>
-          <div class="card">
-            <span class="label">Downloaded files</span>
-            <span class="value">{downloaded}</span>
-          </div>
-          <div class="card">
-            <span class="label">Updated</span>
-            <span class="value muted">{status.get('updated_at') or 'waiting'}</span>
-          </div>
-        </div>
+        </header>
 
-        {app_links}
+        <section class="section">
+          <div class="section-header">
+            <h2 class="section-title">Runtime controls</h2>
+          </div>
+          <div class="actions">
+            __APP_LINKS__
+          </div>
+        </section>
 
-        <div class="panel">
-          <h2>Remote API key manager</h2>
-          <p class="tiny">Create bearer tokens for the TTS services and use them as <code>Authorization: Bearer &lt;key&gt;</code> in remote clients.</p>
+        <section class="section">
+          <div class="section-header">
+            <h2 class="section-title">Service overview</h2>
+          </div>
+          <div class="panel-grid">
+            <div class="mini-card">
+              <h3>Spokenword</h3>
+              <p>German TTS runtime with local model and voice assets loaded from the synced bucket.</p>
+            </div>
+            <div class="mini-card">
+              <h3>Raven</h3>
+              <p>OpenAI-compatible voice endpoint for browser and remote client integrations.</p>
+            </div>
+            <div class="mini-card">
+              <h3>Admin</h3>
+              <p>Create bearer keys for remote access and control stack lifecycle from the dashboard.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-header">
+            <h2 class="section-title">Remote API key manager</h2>
+          </div>
+          <p class="tiny">Create bearer tokens for the TTS services and attach them as <code>Authorization: Bearer &lt;key&gt;</code> in remote clients.</p>
           <form id="keyForm">
             <select id="service" name="service">
               <option value="spokenword">spokenword</option>
               <option value="raven">raven</option>
             </select>
-            <button type="submit" class="admin-btn">Generate API key</button>
+            <button type="submit" class="admin-btn primary">Generate API key</button>
           </form>
           <ul id="keyList">
-            {key_rows}
+            __KEY_ROWS__
           </ul>
-        </div>
+        </section>
       </div>
       <script>
-        async function refresh() {{
-          try {{
+        async function refresh() {
+          try {
             const response = await fetch('/api/status');
             const data = await response.json();
-            if (data.status === 'ready') {{
+            if (data.status === 'ready') {
               window.location.reload();
-            }}
-          }} catch (error) {{}}
-        }}
-        async function refreshKeys() {{
+            }
+          } catch (error) {}
+        }
+        async function refreshKeys() {
           const response = await fetch('/api/keys');
           const payload = await response.json();
           const list = document.getElementById('keyList');
           if (!list) return;
-          list.innerHTML = payload.keys.length ? payload.keys.map((item) => `
-            <li><strong>${{item.service}}</strong>: <code>${{item.key}}</code> <span class='tiny'>${{item.created_at}}</span></li>
-          `).join('') : '<li class="tiny">No API keys created yet.</li>';
+          list.innerHTML = payload.keys.length ? payload.keys.map((item) =>
+            '<li><span class="key-name">' + item.service + '</span><code>' + item.key + '</code><span class="tiny">' + item.created_at + '</span></li>'
+          ).join('') : '<li class="tiny">No API keys created yet.</li>';
         }
-        document.querySelectorAll('.admin-btn').forEach((button) => {{
+        document.querySelectorAll('.admin-btn').forEach((button) => {
           if (button.type === 'submit') return;
-          button.addEventListener('click', async () => {{
+          button.addEventListener('click', async () => {
             const action = button.dataset.action;
-            const response = await fetch('/api/' + action, {{ method: 'POST' }});
+            const response = await fetch('/api/' + action, { method: 'POST' });
             const payload = await response.json();
-            if (payload.ok) {{
+            if (payload.ok) {
               setTimeout(() => window.location.reload(), 800);
-            }} else {{
+            } else {
               alert('Action failed: ' + (payload.stderr || payload.error || 'unknown error'));
-            }}
-          }});
-        }});
-        document.getElementById('keyForm')?.addEventListener('submit', async (event) => {{
+            }
+          });
+        });
+        document.getElementById('keyForm')?.addEventListener('submit', async (event) => {
           event.preventDefault();
           const service = document.getElementById('service').value;
-          const response = await fetch('/api/key/create', {{
+          const response = await fetch('/api/key/create', {
             method: 'POST',
-            headers: {{ 'Content-Type': 'application/json' }},
-            body: JSON.stringify({{ service }})
-          }});
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ service })
+          });
           const payload = await response.json();
-          if (payload.ok) {{
+          if (payload.ok) {
             await refreshKeys();
             alert('API key created for ' + payload.service + ': ' + payload.key);
-          } else {{
+          } else {
             alert('Key creation failed: ' + (payload.error || 'unknown error'));
-          }}
-        }});
+          }
+        });
         setInterval(refresh, 5000);
       </script>
     </body>
     </html>
     """
-
-
+    rendered = template
+    replacements = {
+        "__STATUS_LABEL__": status_label,
+        "__STATUS_CLASS__": "" if status_name == "ready" else "waiting",
+        "__BUCKET__": status.get("bucket", "eysho-it/pocket-tts-models"),
+        "__MODEL_FILES__": str(model_files),
+        "__VOICE_FILES__": str(voice_files),
+        "__DOWNLOADED__": str(downloaded),
+        "__UPDATED_AT__": str(status.get("updated_at") or "waiting"),
+        "__APP_LINKS__": app_links,
+        "__KEY_ROWS__": key_rows,
+    }
+    for key, value in replacements.items():
+        rendered = rendered.replace(key, str(value))
+    return rendered
 class StatusHandler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok", "admin": ADMIN_USERNAME}).encode())
+            return
+
         if self.path == "/api/keys":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"keys": read_api_keys()}).encode())
             return
+
         if self.path == "/api/status":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps(read_status()).encode())
+            return
+
+        if not require_dashboard_auth(self):
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Basic realm="Pocket TTS dashboard"')
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "unauthorized"}).encode())
             return
 
         self.send_response(200)
@@ -365,6 +604,14 @@ class StatusHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length", "0"))
         raw_body = self.rfile.read(length) if length else b""
+
+        if not require_dashboard_auth(self):
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Basic realm="Pocket TTS dashboard"')
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "unauthorized"}).encode())
+            return
 
         if self.path == "/api/start":
             result = run_compose("up --build -d")
