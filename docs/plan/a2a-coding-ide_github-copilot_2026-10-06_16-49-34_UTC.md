@@ -20,6 +20,17 @@ Pocket TTS ist die Audio-Ausgabe dieser Anwendung. Ein einzelner Agent kann eine
 - `GenuiChat` für Chat und Gesprächsverlauf dort nutzen, wo die eingebaute Chat-UX genügt.
 - Laufenden Workspace- und Aufgabenstatus im Frontend-Store/Backend führen. Renderer-`state` wird laut SDK beim Initialisieren eingemischt und ist kein Ersatz für laufenden Anwendungszustand.
 
+### Admin- und Betriebskonsole
+
+- Einen separat geschützten Admin-Bereich für Dienststatus, Modell-/Voice-Assets, API-Keys und Laufzeitkonfiguration bereitstellen.
+- Status mindestens für Model-Sync, Spokenword, Raven, IDE-Orchestrator und TTS-Gateway anzeigen; Healthchecks, Ports, letzter Sync, Modell-/Voice-Anzahl und verständliche Fehler aufführen.
+- API-Keys für die logischen Dienste `spokenword` und `raven` erstellen, widerrufen und rotieren. Rohschlüssel nur beim Erstellen einmal zeigen; im persistenten Store nur Hashes speichern.
+- Modellquelle/Bucket, Revision und verfügbare Modelle anzeigen; Modellwechsel nur auf verifizierte Assets erlauben und danach betroffene Dienste kontrolliert neu starten.
+- Stimmen aus synchronisierten Voice-Dateien als Auswahl anbieten. Freie Dateipfade aus UI/Agenten nicht akzeptieren.
+- Ports und externe Service-URLs als Deployment-Konfiguration anzeigen. Änderungen, die Bind-Ports oder geladene Modelle betreffen, als Neustart-/Redeploy-Schritt behandeln und vor Übernahme bestätigen.
+- Beim Start zwingend eindeutige Admin-Zugangsdaten verlangen. Der bestehende `change-me`-Fallback und ein dadurch offener Admin-Zugriff dürfen nicht in die produktive Konfiguration gelangen.
+- Compose-Aktionen wie `docker compose up/down` nur lokal unterstützen. Railway-Services innerhalb der App nicht so behandeln, als hätten sie den lokalen Docker-Daemon; dort kontrollierte Railway-Deployment-/Restart-Aktionen oder externe Neu-Deploys verwenden.
+
 ### Orchestrator und Agenten
 
 - Eigenständiger Backend-Dienst mit Agentenadaptern und A2A-Aufgaben-/Ereignismodell.
@@ -59,6 +70,14 @@ Pocket TTS ist die Audio-Ausgabe dieser Anwendung. Ein einzelner Agent kann eine
 - Die vorliegende Spokenword-Route ist kein `/v1/audio/speech`-JSON-Endpunkt. Für Browserzugriffe CORS, Authentifizierung und Deployment-Origin prüfen; bevorzugt ruft ein serverseitiger TTS-Proxy die internen Services auf.
 - Stimmenverzeichnis und Voice-IDs vor dem Voice-Picker gegen die tatsächlich synchronisierten Assets prüfen. Keine Dateipfade aus Agentenantworten direkt als Voice-Quelle akzeptieren.
 
+### OpenAI-kompatibles Gateway und Authentifizierung
+
+- Einen öffentlichen, authentifizierten TTS-Einstieg `POST /v1/audio/speech` bereitstellen. Er akzeptiert OpenAI-kompatible Felder (`model`, `input`, `voice`, `response_format`) und Bearer-Keys.
+- Raven nativ ansprechen; für Spokenword die JSON-Anfrage serverseitig in dessen Multipart-`/tts`-Vertrag übersetzen. Damit bleiben beide logischen Services für Clients über denselben kompatiblen Vertrag nutzbar.
+- Keys je logischem Dienst (`spokenword`/`raven`) durchsetzen, nicht nur im Dashboard anzeigen oder erzeugen. Ungültige/widerrufene Keys mit `401` ablehnen; Nutzung, Rate Limits und Rotation protokollieren.
+- Provider-/Admin-Geheimnisse nie an Browser oder Agents ausliefern. Die IDE verwendet einen autorisierten Backend-Proxy; TTS-Container bleiben intern erreichbar.
+- Bestehende Schlüssel in `german/api_keys.json` sind derzeit Klartext. Migration auf gehashte Schlüssel mit Rotation und sauberem Umgang mit Alt-Keys als eigener Schritt.
+
 ## 4. Backend-API für die IDE
 
 Erster interner API-Entwurf, vor Implementierung an bestehende Services anzupassen:
@@ -71,8 +90,13 @@ Erster interner API-Entwurf, vor Implementierung an bestehende Services anzupass
 - `GET /api/workspaces/:id/diff` – Änderungen mit Agent-/Task-Herkunft abrufen.
 - `POST /api/workspaces/:id/apply` – freigegebene Änderung anwenden oder mergen.
 - `POST /api/tts/speech` – autorisierte TTS-Proxy-Route für einzelne Agentenantworten.
+- `GET /api/admin/status` – Health, Service-Ports, Sync-Zeitpunkt sowie verfügbare Modell-/Voice-Assets.
+- `GET/PATCH /api/admin/config` – validierte Service-URLs, öffentliche Ports, Modell-/Bucket-Auswahl und Default-Voice lesen/ändern; Änderungen mit Neustartbedarf explizit kennzeichnen.
+- `GET/POST/DELETE /api/admin/keys` – servicegebundene Keys erstellen, einmalig ausgeben, widerrufen/rotieren und Metadaten anzeigen.
+- `POST /v1/audio/speech` – OpenAI-kompatibler, Bearer-geschützter Gateway-Endpunkt mit Adapter zu Raven oder Spokenword.
 
 Alle schreibenden oder ausführenden Endpunkte prüfen Workspace-Rechte, Task-Zustand und Freigabe serverseitig.
+Admin-Endpunkte prüfen zusätzlich Admin-Authentifizierung und CSRF-Schutz; API-Keys werden nie über normale Statusabfragen erneut im Klartext ausgegeben.
 
 ## 5. Coding-Workflow
 
@@ -135,10 +159,21 @@ Alle schreibenden oder ausführenden Endpunkte prüfen Workspace-Rechte, Task-Zu
 - Turns über Spokenword sequenziell erzeugen und abspielen; TTS-Ausfall, Cancel, Replay und Stimme pro Agent abdecken.
 - Ergebnis: nachvollziehbare Textdebatte mit synchronisierter, optionaler Mehrstimmenausgabe.
 
-### Phase 6: Deployment und Betriebsreife
+### Phase 6: API-Gateway und Admin-Konsole
 
-- Compose für lokale Entwicklung und Railway-Konfiguration für Deployment abstimmen.
-- Frontend, Orchestrator, Agentenadapter und TTS-Proxy mit Healthchecks, Auth, Limits und Secret-Konfiguration betreiben.
+- OpenAI-kompatibles `/v1/audio/speech`-Gateway implementieren und zu Raven bzw. Spokenword routen; Bearer-Authentifizierung tatsächlich vor jedem Request prüfen.
+- Key-Verwaltung mit Erstellen, einmaliger Anzeige, Widerruf/Rotation, Hash-Speicherung und Migration der vorhandenen Klartext-Keys umsetzen.
+- Admin-Oberfläche für Admin-Zugang, Healthchecks, Ports, Modell-/Bucket-Konfiguration, Sync-Status und Voice-Auswahl bauen.
+- Modell-/Portänderungen validieren, Neustartbedarf anzeigen und kontrollierte lokale bzw. Railway-Aktionen unterscheiden.
+- Ergebnis: beide TTS-Dienste über dokumentierte, geschützte Client-Verträge verwaltbar.
+
+### Phase 7: Deployment und Betriebsreife
+
+- Compose für lokale Entwicklung und einzelne Railpack-/Railway-Services für Frontend, Orchestrator, Gateway, Spokenword, Raven und Model-Sync abstimmen.
+- Öffentliche und interne Ports eindeutig konfigurieren: lokal derzeit Landing `8088`, Spokenword `8000`, Raven `8080`; Produktions-Ports aus Railway-`PORT`/Service-URLs beziehen, nicht fest im Frontend verdrahten.
+- Persistente Volumes/Stores für heruntergeladene Modelle und Voices, Admin-/Key-Metadaten, Task-Audit und Workspace-Artefakte definieren. Große Modell-Assets nicht bei jedem Neustart neu herunterladen.
+- Railway-Secrets für Admin-Zugang, Provider- und HF-Zugangsdaten konfigurieren; Healthchecks, internes Routing, TLS, Logs, Ressourcenlimits und Startabhängigkeiten dokumentieren.
+- Änderungen von Port oder Modellrevision brauchen je nach Dienst einen kontrollierten Restart/Redeploy; UI zeigt laufenden, ausstehenden oder fehlgeschlagenen Konfigurationswechsel.
 - Build-, Integrations- und End-to-End-Tests samt Dokumentation ergänzen.
 - Ergebnis: reproduzierbarer lokaler Betrieb und dokumentierbarer Railway-Deploy.
 
@@ -149,6 +184,9 @@ Alle schreibenden oder ausführenden Endpunkte prüfen Workspace-Rechte, Task-Zu
 - Oberfläche: Gestreamte GenUI-Updates verändern nur freigegebene Panels und überstehen partielle/fehlerhafte Schemafragmente kontrolliert.
 - Skills: Nur aufgabenrelevante, versionierte Skills an Agents geben und im Laufprotokoll nachweisen.
 - Audio: Einzelagentenantwort sprechen; Mehragenten-Turns mit passenden Stimmen ohne Überlappung ausgeben; Text bleibt bei Audiofehlern verfügbar.
+- API/Admin: Beide logischen TTS-Dienste akzeptieren gültige servicegebundene Bearer-Keys über den OpenAI-kompatiblen Gateway-Vertrag; ungültige und widerrufene Keys werden abgelehnt. Admin kann Keys widerrufen sowie Ports, Modelle und Voices verwalten.
+- Konfiguration: Modell-/Portänderungen werden validiert, persistiert und mit dem erforderlichen Restart/Redeploy-Status angezeigt; Produktionsbetrieb startet nicht mit Default-Admin-Zugangsdaten.
+- Deployment: Compose lokal und Railway mit internen Service-URLs, persistenten Model-/Voice-Assets, Secrets und Healthchecks funktionieren ohne feste Frontend-URLs.
 - Sicherheit: Nicht erlaubte Befehle/Actions/Schreibzugriffe serverseitig blockieren; Agenten-Code nicht ungeprüft ausführen.
 - Betrieb: Abbruch, Timeout, Agentenfehler, Merge-Konflikt und TTS-Ausfall erzeugen verständlichen Status und lassen die IDE bedienbar.
 
