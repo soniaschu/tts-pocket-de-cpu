@@ -1,0 +1,45 @@
+services:
+  model-voice-assets:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.models
+    environment:
+      HF_BUCKET_ID: ${HF_BUCKET_ID:-eysho-it/pocket-tts-models}
+      HF_TOKEN: ${HF_TOKEN:-}
+      DOWNLOAD_WORKERS: ${DOWNLOAD_WORKERS:-4}
+    dns:
+      - ${DOCKER_DNS_SERVER:-1.1.1.1}
+    volumes:
+      - hf_bucket:/bucket
+    restart: "no"
+
+  spokenword:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.spokenword
+    depends_on:
+      model-voice-assets:
+        condition: service_completed_successfully
+    environment:
+      HF_HOME: /data/huggingface
+      OMP_NUM_THREADS: ${SPOKENWORD_THREADS:-4}
+      XDG_DATA_HOME: /data
+    dns:
+      - ${DOCKER_DNS_SERVER:-1.1.1.1}
+    volumes:
+      - hf_bucket:/bucket:ro
+      - spokenword_data:/data
+    ports:
+      - "8000:8000"
+    init: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
+
+volumes:
+  hf_bucket:
+  spokenword_data:

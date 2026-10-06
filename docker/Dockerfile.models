@@ -1,0 +1,9 @@
+FROM python:3.12-slim
+
+WORKDIR /opt/model-sidecar
+COPY docker/sync_hf_bucket.py ./sync_hf_bucket.py
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+ENTRYPOINT ["python", "/opt/model-sidecar/sync_hf_bucket.py"]

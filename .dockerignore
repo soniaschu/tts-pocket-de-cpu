@@ -1,0 +1,17 @@
+**/.git
+**/.venv
+**/venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.build
+**/CMakeFiles
+**/CMakeCache.txt
+**/models/*.onnx
+**/models/*.safetensors
+**/ASR
+**/Voices
+pocket-tts-raven/webdemo
+pocket-tts-raven/docs
+pocket-tts-raven/tests
+pocket-tts-raven/voices

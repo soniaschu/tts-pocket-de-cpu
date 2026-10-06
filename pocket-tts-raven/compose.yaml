@@ -1,0 +1,44 @@
+services:
+  model-voice-assets:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.models
+    environment:
+      HF_BUCKET_ID: ${HF_BUCKET_ID:-eysho-it/pocket-tts-models}
+      HF_TOKEN: ${HF_TOKEN:-}
+      DOWNLOAD_WORKERS: ${DOWNLOAD_WORKERS:-4}
+    dns:
+      - ${DOCKER_DNS_SERVER:-1.1.1.1}
+    volumes:
+      - hf_bucket:/bucket
+    restart: "no"
+
+  raven:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.raven
+    depends_on:
+      model-voice-assets:
+        condition: service_completed_successfully
+    environment:
+      RAVEN_PORT: 8080
+      RAVEN_THREADS: ${RAVEN_THREADS:-4}
+    dns:
+      - ${DOCKER_DNS_SERVER:-1.1.1.1}
+    volumes:
+      - hf_bucket:/bucket:ro
+      - raven_data:/data
+    ports:
+      - "8080:8080"
+    init: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  hf_bucket:
+  raven_data:

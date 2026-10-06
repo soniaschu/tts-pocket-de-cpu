@@ -1,0 +1,29 @@
+FROM ubuntu:24.04 AS build
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential ca-certificates cmake curl git libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY pocket-tts-raven/ ./
+RUN cmake -S . -B .build -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build .build --parallel 2 \
+    && mkdir -p /opt/onnxruntime \
+    && cp -a .build/_deps/onnxruntime-src/lib/libonnxruntime.so* /opt/onnxruntime/
+
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl libgomp1 libstdc++6 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /src/pocket-tts /usr/local/bin/pocket-tts
+COPY --from=build /opt/onnxruntime/ /usr/local/lib/
+COPY docker/entrypoint-raven.sh /usr/local/bin/entrypoint-raven
+RUN chmod +x /usr/local/bin/entrypoint-raven && ldconfig
+
+WORKDIR /app
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/entrypoint-raven"]
