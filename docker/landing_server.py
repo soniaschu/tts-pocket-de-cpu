@@ -59,7 +59,7 @@ def write_api_keys(keys: list[dict]) -> None:
 
 def require_dashboard_auth(handler: BaseHTTPRequestHandler) -> bool:
     if not ADMIN_PASSWORD or ADMIN_PASSWORD == "change-me":
-    return not RAILWAY_DEPLOYMENT
+  return not RAILWAY_DEPLOYMENT
 
     auth_header = handler.headers.get("Authorization", "")
     if not auth_header.startswith("Basic "):
